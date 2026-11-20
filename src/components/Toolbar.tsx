@@ -1,72 +1,33 @@
-import { ChangeEvent, useEffect, useRef } from 'react';
-import clsx from 'clsx';
-import {
-  GRID_SIZE_LIMITS,
-  GridMode,
-  useGridMode,
-  useGridSize,
-  useGridStore,
-  useGridZoom,
-  useSelectedColor
-} from '../state/gridStore';
+import { useLanguage } from '../language';
+import { ChangeEvent, CSSProperties, useEffect, useRef } from 'react';
+import { GridMode, useGridMode, useGridStore, useGridZoom, ZOOM_LIMITS } from '../state/gridStore';
+import Icon from './Icon';
+import LanguagePicker from './LanguagePicker';
 
-const modeDefinitions: Array<{ id: GridMode; label: string; shortcut: string }> = [
-  { id: 'draw', label: 'Draw', shortcut: 'B' },
-  { id: 'paint', label: 'Paint', shortcut: 'P' },
-  { id: 'erase', label: 'Erase', shortcut: 'E' },
-  { id: 'fill', label: 'Fill', shortcut: 'F' },
-  { id: 'fillForward', label: 'Fill ↘', shortcut: 'G' },
-  { id: 'pan', label: 'Pan', shortcut: 'Space' }
+const modes: { id: GridMode; key: string }[] = [
+  { id: 'draw', key: 'B' },
+  { id: 'paint', key: 'P' },
+  { id: 'erase', key: 'E' },
+  { id: 'fill', key: 'F' },
+  { id: 'fillForward', key: 'G' },
+  { id: 'pan', key: 'Space' }
 ];
 
-const QUICK_PALETTE = ['#0ea5e9', '#a855f7', '#f97316', '#f43f5e', '#22c55e', '#facc15'];
+export function TopBar({ panelsVisible, togglePanels }: { panelsVisible: boolean; togglePanels: () => void }) {
+  const { t } = useLanguage();
+  const fileInput = useRef<HTMLInputElement>(null);
+  const canUndo = useGridStore(s => s.history.length > 0);
+  const canRedo = useGridStore(s => s.future.length > 0);
+  const { undo, redo, serialize, deserialize } = useGridStore.getState();
 
-const Toolbar = () => {
-  const mode = useGridMode();
-  const zoom = useGridZoom();
-  const { selectedColor, setSelectedColor } = useSelectedColor();
-  const { rows, cols, setGridSize } = useGridSize();
-  const {
-    setMode,
-    undo,
-    redo,
-    clear,
-    serialize,
-    deserialize,
-    bumpZoom
-  } = useGridStore((state) => ({
-    setMode: state.setMode,
-    undo: state.undo,
-    redo: state.redo,
-    clear: state.clear,
-    serialize: state.serialize,
-    deserialize: state.deserialize,
-    bumpZoom: state.bumpZoom
-  }));
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const temporaryModeRef = useRef<GridMode | null>(null);
-
-  const quickPalette = QUICK_PALETTE;
-
-  const handleImport = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const content = reader.result;
-      if (typeof content === 'string') {
-        deserialize(content);
-      }
-    };
-    reader.readAsText(file);
-    event.target.value = '';
+  const handleImport = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = '';
+    if (file) deserialize(await file.text());
   };
 
   const handleExport = () => {
-    const data = serialize();
-    const blob = new Blob([data], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(new Blob([serialize()], { type: 'application/json' }));
     const anchor = document.createElement('a');
     anchor.href = url;
     anchor.download = 'grid.json';
@@ -74,224 +35,101 @@ const Toolbar = () => {
     URL.revokeObjectURL(url);
   };
 
-  const openFilePicker = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleSelectedColorChange = (event: ChangeEvent<HTMLInputElement>) => {
-    if (!event.target.value) return;
-    setSelectedColor(event.target.value);
-  };
-
-  const handleGridSizeInput = (dimension: 'rows' | 'cols') =>
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const nextValue = Number.parseInt(event.target.value, 10);
-      if (Number.isNaN(nextValue)) return;
-      if (dimension === 'rows') {
-        setGridSize(nextValue, cols);
-      } else {
-        setGridSize(rows, nextValue);
-      }
-    };
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target && ['INPUT', 'TEXTAREA'].includes(target.tagName)) {
-        return;
-      }
-
-      const key = event.key.toLowerCase();
-
-      if (event.metaKey || event.ctrlKey) {
-        if (key === 'z') {
-          if (event.shiftKey) {
-            redo();
-          } else {
-            undo();
-          }
-          event.preventDefault();
-          return;
-        }
-        if (key === 'y') {
-          redo();
-          event.preventDefault();
-          return;
-        }
-      }
-
-      switch (event.key) {
-        case 'b':
-        case 'B':
-          setMode('draw');
-          event.preventDefault();
-          break;
-        case 'p':
-        case 'P':
-          setMode('paint');
-          event.preventDefault();
-          break;
-        case 'e':
-        case 'E':
-          setMode('erase');
-          event.preventDefault();
-          break;
-        case 'f':
-        case 'F':
-          setMode('fill');
-          event.preventDefault();
-          break;
-        case 'g':
-        case 'G':
-          setMode('fillForward');
-          event.preventDefault();
-          break;
-        case ' ':
-          if (!temporaryModeRef.current) {
-            temporaryModeRef.current = mode;
-            setMode('pan');
-          }
-          event.preventDefault();
-          break;
-        case '+':
-        case '=':
-          bumpZoom(0.1);
-          event.preventDefault();
-          break;
-        case '-':
-        case '_':
-          bumpZoom(-0.1);
-          event.preventDefault();
-          break;
-        case '0':
-          event.preventDefault();
-          bumpZoom(1 - zoom);
-          break;
-        case 'Delete':
-        case 'Backspace':
-          clear();
-          event.preventDefault();
-          break;
-        default:
-          break;
-      }
-    };
-
-    const handleKeyUp = (event: KeyboardEvent) => {
-      if (event.key === ' ' && temporaryModeRef.current) {
-        setMode(temporaryModeRef.current);
-        temporaryModeRef.current = null;
-        event.preventDefault();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
-  }, [bumpZoom, clear, mode, redo, setMode, undo, zoom]);
-
   return (
-    <header className="toolbar" aria-label="grid editor toolbar">
-      <div className="toolbar-section">
-        {modeDefinitions.map((modeOption) => (
-          <button
-            key={modeOption.id}
-            type="button"
-            className={clsx('toolbar-button', `mode-${modeOption.id}`, {
-              active: mode === modeOption.id
-            })}
-            aria-pressed={mode === modeOption.id}
-            onClick={() => setMode(modeOption.id)}
-          >
-            {modeOption.label}
-            <span className="shortcut">{modeOption.shortcut}</span>
-          </button>
-        ))}
-      </div>
-      <div className="toolbar-section color-picker">
-        <div className="color-picker-group" role="group" aria-label="Color presets">
-          {quickPalette.map((color) => (
-            <button
-              key={color}
-              type="button"
-              className={clsx('color-swatch', { selected: selectedColor === color })}
-              style={{ backgroundColor: color }}
-              onClick={() => setSelectedColor(color)}
-              aria-label={`Select ${color}`}
-            />
-          ))}
-        </div>
-        <label className="color-input">
-          <span>Color</span>
-          <input type="color" value={selectedColor} onChange={handleSelectedColorChange} />
-        </label>
-      </div>
-      <div className="toolbar-section size-controls" role="group" aria-label="Grid size">
-        <label className="size-input">
-          <span>Rows</span>
-          <input
-            type="number"
-            min={GRID_SIZE_LIMITS.min}
-            max={GRID_SIZE_LIMITS.max}
-            value={rows}
-            onChange={handleGridSizeInput('rows')}
-          />
-        </label>
-        <label className="size-input">
-          <span>Cols</span>
-          <input
-            type="number"
-            min={GRID_SIZE_LIMITS.min}
-            max={GRID_SIZE_LIMITS.max}
-            value={cols}
-            onChange={handleGridSizeInput('cols')}
-          />
-        </label>
-      </div>
-      <div className="toolbar-section">
-        <button type="button" className="toolbar-button" onClick={undo}>
-          Undo
-          <span className="shortcut">Ctrl/Cmd+Z</span>
-        </button>
-        <button type="button" className="toolbar-button" onClick={redo}>
-          Redo
-          <span className="shortcut">Shift+Ctrl/Cmd+Z</span>
-        </button>
-        <button type="button" className="toolbar-button" onClick={clear}>
-          Clear
-        </button>
-      </div>
-      <div className="toolbar-section">
-        <button type="button" className="toolbar-button" onClick={() => bumpZoom(-0.1)}>
-          Zoom -
-        </button>
-        <span className="zoom-indicator" aria-live="polite">
-          {(zoom * 100).toFixed(0)}%
-        </span>
-        <button type="button" className="toolbar-button" onClick={() => bumpZoom(0.1)}>
-          Zoom +
-        </button>
-      </div>
-      <div className="toolbar-section">
-        <button type="button" className="toolbar-button" onClick={openFilePicker}>
-          Import
-        </button>
-        <button type="button" className="toolbar-button" onClick={handleExport}>
-          Export
-        </button>
-        <input
-          ref={fileInputRef}
-          className="hidden-input"
-          type="file"
-          accept="application/json"
-          onChange={handleImport}
-        />
+    <header className="topbar glass">
+      <h1><span className="logo" aria-hidden="true"><i /><i /><i /><i /></span>{t.title}</h1>
+      <LanguagePicker />
+      <div className="top-actions">
+        <button className="action panels-toggle" type="button" aria-pressed={panelsVisible}
+          aria-label={t.panels} title={t.panels} onClick={togglePanels}><Icon name="panels" /></button>
+        <button className="action" disabled={!canUndo} onClick={undo} aria-label={t.undo} title={`${t.undo} (Ctrl / ⌘ Z)`}><Icon name="undo" /><span>{t.undo}</span></button>
+        <button className="action" disabled={!canRedo} onClick={redo} aria-label={t.redo} title={`${t.redo} (Ctrl / ⌘ Shift Z)`}><Icon name="redo" /><span>{t.redo}</span></button>
+        <span className="action-divider" aria-hidden="true" />
+        <button className="action" onClick={() => fileInput.current?.click()} aria-label={t.import} title={`${t.import} JSON`}><Icon name="import" /><span>{t.import}</span></button>
+        <button className="action export" onClick={handleExport} aria-label={t.export} title={`${t.export} JSON`}><Icon name="export" /><span>{t.export}</span></button>
+        <input hidden type="file" aria-label={t.importFile} accept=".json,application/json" ref={fileInput} onChange={handleImport} />
       </div>
     </header>
   );
-};
+}
 
-export default Toolbar;
+export function ToolPalette() {
+  const { t } = useLanguage();
+  const mode = useGridMode();
+  const { setMode } = useGridStore.getState();
+
+  useEffect(() => {
+    let previousMode: GridMode | null = null;
+
+    const releasePan = () => {
+      if (previousMode !== null) setMode(previousMode);
+      previousMode = null;
+    };
+    const keydown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, select, textarea, [contenteditable="true"]') || event.altKey) return;
+      const key = event.key.toLowerCase();
+      const { undo, redo, clear, bumpZoom, setZoom } = useGridStore.getState();
+      if (event.ctrlKey || event.metaKey) {
+        if (key === 'z') (event.shiftKey ? redo : undo)();
+        else if (key === 'y') redo();
+        else return;
+      } else if (key === ' ') {
+        if (target?.closest('.panels-toggle, .inspector-toggle')) return;
+        if (previousMode === null) previousMode = useGridStore.getState().mode;
+        setMode('pan');
+      } else if (key === '+' || key === '=') bumpZoom(0.1);
+      else if (key === '-' || key === '_') bumpZoom(-0.1);
+      else if (key === '0') setZoom(1);
+      else if (key === 'delete' || key === 'backspace') clear();
+      else {
+        const tool = modes.find(item => item.key.toLowerCase() === key);
+        if (!tool) return;
+        setMode(tool.id);
+      }
+      event.preventDefault();
+    };
+    const keyup = (event: KeyboardEvent) => {
+      if (event.key === ' ' && previousMode !== null) {
+        releasePan();
+        event.preventDefault();
+      }
+    };
+    window.addEventListener('keydown', keydown);
+    window.addEventListener('keyup', keyup);
+    window.addEventListener('blur', releasePan);
+    return () => {
+      window.removeEventListener('keydown', keydown);
+      window.removeEventListener('keyup', keyup);
+      window.removeEventListener('blur', releasePan);
+    };
+  }, [setMode]);
+
+  return (
+    <section className="tools glass" aria-label={t.tools}>
+      <div className="tool-list" style={{ '--tool-index': modes.findIndex(item => item.id === mode) } as CSSProperties}>
+        {modes.map(tool => (
+          <button key={tool.id} className="tool" aria-label={t[tool.id]} aria-pressed={tool.id === mode}
+            title={`${tool.id === 'fillForward' ? t.directionHint : t[tool.id]} (${tool.key})`} onClick={() => setMode(tool.id)}>
+            <Icon name={tool.id} /><span>{t[tool.id]}</span><kbd>{tool.key}</kbd>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+export function ZoomControl({ fitGrid }: { fitGrid: () => void }) {
+  const { t } = useLanguage();
+  const zoom = useGridZoom();
+  const { bumpZoom, setZoom } = useGridStore.getState();
+  return (
+    <div className="zoom glass" role="group" aria-label={t.zoom}>
+      <button aria-label={t.zoomOut} title={`${t.zoomOut} (−)`} disabled={zoom <= ZOOM_LIMITS.min} onClick={() => bumpZoom(-0.1)}><Icon name="minus" /></button>
+      <button className="zoom-value" aria-label={t.resetZoom} title={`${t.resetZoom} (0)`} onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button>
+      <button aria-label={t.zoomIn} title={`${t.zoomIn} (+)`} disabled={zoom >= ZOOM_LIMITS.max} onClick={() => bumpZoom(0.1)}><Icon name="plus" /></button>
+      <span className="zoom-divider" aria-hidden="true" />
+      <button className="fit-grid" aria-label={t.fit} title={t.fit} onClick={fitGrid}><Icon name="fit" /></button>
+    </div>
+  );
+}

@@ -37,7 +37,7 @@ interface GridStore extends PersistedGridState {
   future: StateSnapshot[];
   activeStrokeIndex: number | null;
   setMode: (mode: GridMode) => void;
-  setZoom: (zoom: number) => void;
+  setZoom: (zoom: number, pan?: Pick<PersistedGridState, 'panX' | 'panY'>) => void;
   bumpZoom: (delta: number) => void;
   applyCellAction: (row: number, col: number) => void;
   startPaintStroke: (point: PaintPoint) => void;
@@ -57,7 +57,7 @@ interface GridStore extends PersistedGridState {
 const DEFAULT_ROWS = 32;
 const DEFAULT_COLS = 32;
 const MAX_HISTORY = 100;
-const MIN_ZOOM = 0.5;
+const MIN_ZOOM = 0.01;
 const MAX_ZOOM = 4;
 const MIN_GRID_SIZE = 1;
 const MAX_GRID_SIZE = 128;
@@ -158,9 +158,9 @@ const persistSnapshot = (state: PersistedGridState) => {
 
 const readSnapshot = (): PersistedGridState | null => {
   if (typeof window === 'undefined') return null;
-  const raw = window.localStorage.getItem(STORAGE_KEY);
-  if (!raw) return null;
   try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (
       typeof parsed.rows === 'number' &&
@@ -181,7 +181,7 @@ const readSnapshot = (): PersistedGridState | null => {
       };
     }
   } catch (error) {
-    console.warn('Failed to parse stored grid state', error);
+    console.warn('Failed to read stored grid state', error);
   }
   return null;
 };
@@ -274,11 +274,11 @@ export const useGridStore = create<GridStore>((set, get) => ({
   future: [],
   activeStrokeIndex: null,
   setMode: (mode) => set({ mode }),
-  setZoom: (zoom) =>
+  setZoom: (zoom, pan) =>
     set((state) => {
-      const clamped = clamp(zoom, MIN_ZOOM, MAX_ZOOM);
-      persistSnapshot(buildPersistedState(state, { zoom: clamped }));
-      return { zoom: clamped };
+      const view = { zoom: clamp(zoom, MIN_ZOOM, MAX_ZOOM), ...pan };
+      persistSnapshot(buildPersistedState(state, view));
+      return view;
     }),
   bumpZoom: (delta) => {
     const { zoom, setZoom } = get();
@@ -613,3 +613,5 @@ export const GRID_SIZE_LIMITS = {
   min: MIN_GRID_SIZE,
   max: MAX_GRID_SIZE
 };
+
+export const ZOOM_LIMITS = { min: MIN_ZOOM, max: MAX_ZOOM };
